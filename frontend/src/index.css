@@ -1,0 +1,236 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Clinical ASD Screening Tool Design System
+   Professional, calm, trustworthy medical interface */
+
+@layer base {
+  :root {
+    /* Clinical color palette - calm, professional */
+    --background: 210 20% 98%;
+    --foreground: 215 25% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 25% 15%;
+
+    /* Primary - Medical teal */
+    --primary: 185 45% 35%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary - Muted slate */
+    --secondary: 210 15% 94%;
+    --secondary-foreground: 215 25% 25%;
+
+    --muted: 210 15% 94%;
+    --muted-foreground: 215 15% 50%;
+
+    /* Accent - Soft clinical blue */
+    --accent: 200 35% 90%;
+    --accent-foreground: 200 45% 25%;
+
+    /* Status colors */
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 160 50% 40%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 40 90% 50%;
+    --warning-foreground: 40 90% 15%;
+
+    --info: 200 80% 50%;
+    --info-foreground: 0 0% 100%;
+
+    /* Risk level colors */
+    --risk-low: 160 50% 40%;
+    --risk-moderate: 40 90% 50%;
+    --risk-high: 0 70% 50%;
+
+    --border: 210 20% 88%;
+    --input: 210 20% 88%;
+    --ring: 185 45% 35%;
+
+    --radius: 0.5rem;
+
+    /* Clinical shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(215 25% 15% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(215 25% 15% / 0.07), 0 2px 4px -2px hsl(215 25% 15% / 0.05);
+    --shadow-lg: 0 10px 15px -3px hsl(215 25% 15% / 0.08), 0 4px 6px -4px hsl(215 25% 15% / 0.05);
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 215 25% 10%;
+    --foreground: 210 20% 95%;
+
+    --card: 215 25% 13%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 215 25% 13%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 185 50% 45%;
+    --primary-foreground: 215 25% 10%;
+
+    --secondary: 215 20% 20%;
+    --secondary-foreground: 210 20% 90%;
+
+    --muted: 215 20% 20%;
+    --muted-foreground: 215 15% 60%;
+
+    --accent: 200 30% 20%;
+    --accent-foreground: 200 40% 80%;
+
+    --destructive: 0 60% 45%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 160 45% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 40 85% 55%;
+    --warning-foreground: 40 90% 15%;
+
+    --border: 215 20% 22%;
+    --input: 215 20% 22%;
+    --ring: 185 50% 45%;
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight text-foreground;
+  }
+}
+
+@layer components {
+  /* Clinical card styles */
+  .clinical-card {
+    @apply bg-card rounded-lg border border-border p-6;
+    box-shadow: var(--shadow-md);
+  }
+
+  .clinical-card-elevated {
+    @apply bg-card rounded-lg border border-border p-6;
+    box-shadow: var(--shadow-lg);
+  }
+
+  /* Step indicator styles */
+  .step-indicator {
+    @apply flex items-center justify-center w-8 h-8 rounded-full text-sm font-medium transition-colors;
+  }
+
+  .step-indicator-active {
+    @apply bg-primary text-primary-foreground;
+  }
+
+  .step-indicator-complete {
+    @apply bg-primary/20 text-primary;
+  }
+
+  .step-indicator-pending {
+    @apply bg-muted text-muted-foreground;
+  }
+
+  /* Risk level badges */
+  .risk-badge {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
+  }
+
+  .risk-badge-low {
+    @apply bg-[hsl(var(--success)/0.15)] text-[hsl(var(--success))];
+  }
+
+  .risk-badge-moderate {
+    @apply bg-[hsl(var(--warning)/0.15)] text-[hsl(var(--warning))];
+  }
+
+  .risk-badge-high {
+    @apply bg-[hsl(var(--destructive)/0.15)] text-[hsl(var(--destructive))];
+  }
+
+  /* Image upload zone */
+  .upload-zone {
+    @apply border-2 border-dashed border-border rounded-lg p-8 text-center transition-colors cursor-pointer;
+  }
+
+  .upload-zone:hover {
+    @apply border-primary/50 bg-primary/5;
+  }
+
+  .upload-zone-active {
+    @apply border-primary bg-primary/10;
+  }
+
+  /* XAI heatmap overlay */
+  .heatmap-container {
+    @apply relative rounded-lg overflow-hidden;
+  }
+
+  .heatmap-overlay {
+    @apply absolute inset-0 mix-blend-multiply pointer-events-none;
+  }
+
+  /* Questionnaire option buttons */
+  .questionnaire-option {
+    @apply flex-1 py-3 px-4 border rounded-lg text-center font-medium transition-all cursor-pointer;
+  }
+
+  .questionnaire-option:hover {
+    @apply border-primary/50;
+  }
+
+  .questionnaire-option-selected {
+    @apply border-primary bg-primary/10 text-primary;
+  }
+
+  /* Progress bar */
+  .progress-bar {
+    @apply h-2 bg-muted rounded-full overflow-hidden;
+  }
+
+  .progress-bar-fill {
+    @apply h-full bg-primary transition-all duration-300;
+  }
+}
+
+/* Smooth transitions */
+.fade-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.fade-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 300ms, transform 300ms;
+}
