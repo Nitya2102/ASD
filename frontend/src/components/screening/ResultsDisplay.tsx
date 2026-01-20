@@ -153,24 +153,15 @@ export function ResultsDisplay({ result, imagePreview, onReset }: ResultsDisplay
           <h3 className="font-semibold text-lg">Explainable AI Visualizations</h3>
           
           <div className="grid md:grid-cols-2 gap-6">
-            {/* Original Image with Grad-CAM */}
+            {/* Grad-CAM heatmap (pre-blended from backend) */}
             <div className="space-y-2">
               <p className="text-sm font-medium">Grad-CAM Heatmap</p>
-              <div className="heatmap-container">
+              <div className="relative w-full">
                 <img
-                  src={imagePreview}
-                  alt="Original"
-                  className="w-full rounded-lg"
+                  src={`data:image/png;base64,${result.imageDetails.heatmapBase64}`}
+                  alt="Grad-CAM heatmap"
+                  className="w-full aspect-[4/5] object-cover rounded-lg block"
                 />
-                {result.imageDetails.heatmapBase64 && (
-                  <img
-                    src={`data:image/png;base64,${result.imageDetails.heatmapBase64}`}
-                    alt="Grad-CAM heatmap"
-                    className="heatmap-overlay opacity-60"
-                  />
-                )}
-                {/* Simulated heatmap overlay for demo */}
-                <div className="absolute inset-0 bg-gradient-to-br from-transparent via-yellow-500/20 to-red-500/30 rounded-lg pointer-events-none" />
               </div>
               <p className="text-xs text-muted-foreground">
                 Warmer colors indicate regions of higher model attention
@@ -180,17 +171,20 @@ export function ResultsDisplay({ result, imagePreview, onReset }: ResultsDisplay
             {/* LIME Explanation */}
             <div className="space-y-2">
               <p className="text-sm font-medium">LIME Explanation</p>
-              <div className="heatmap-container">
-                <img
-                  src={imagePreview}
-                  alt="LIME"
-                  className="w-full rounded-lg"
-                />
-                {/* Simulated LIME overlay for demo */}
-                <div className="absolute inset-0 pointer-events-none">
-                  <div className="absolute top-[20%] left-[30%] w-[40%] h-[15%] border-2 border-primary/50 rounded bg-primary/10" />
-                  <div className="absolute top-[40%] left-[35%] w-[30%] h-[10%] border-2 border-primary/30 rounded bg-primary/5" />
-                </div>
+              <div className="relative w-full">
+                {result.imageDetails.limeBase64 ? (
+                  <img
+                    src={`data:image/png;base64,${result.imageDetails.limeBase64}`}
+                    alt="LIME explanation"
+                    className="w-full aspect-[4/5] object-cover rounded-lg block"
+                  />
+                ) : (
+                  <img
+                    src={imagePreview}
+                    alt="LIME"
+                    className="w-full aspect-[4/5] object-cover rounded-lg block"
+                  />
+                )}
               </div>
               <p className="text-xs text-muted-foreground">
                 Highlighted regions show features most influential to the prediction
@@ -211,8 +205,19 @@ export function ResultsDisplay({ result, imagePreview, onReset }: ResultsDisplay
                     </div>
                     <div className="text-right">
                       <span className="text-lg font-semibold text-primary">
-                        {Math.round(region.attention_score * 100)}%
+                        {Math.round((region.attention_score ?? 0) * 100)}%
                       </span>
+                    </div>
+                  </div>
+                ))
+              ) : result.imageDetails.facialRegions && typeof result.imageDetails.facialRegions === 'object' ? (
+                Object.entries(result.imageDetails.facialRegions).map(([label, val]) => (
+                  <div key={label} className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-sm">{label.replace(/_/g, ' ')}</p>
+                    </div>
+                    <div className="text-right text-primary font-semibold">
+                      {typeof val === 'number' ? `${Math.round(val * 100)}%` : val}
                     </div>
                   </div>
                 ))
@@ -252,19 +257,21 @@ export function ResultsDisplay({ result, imagePreview, onReset }: ResultsDisplay
       )}
 
       {/* Recommendations */}
-      <div className="clinical-card space-y-4">
-        <h3 className="font-semibold text-lg">Recommendations</h3>
-        <ul className="space-y-2">
-          {result.questionnaireDetails.recommendations.map((rec, i) => (
-            <li key={i} className="flex items-start gap-3 text-sm">
-              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-medium">
-                {i + 1}
-              </span>
-              <span className="text-muted-foreground">{rec}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {result.questionnaireDetails.recommendations?.length ? (
+        <div className="clinical-card space-y-4">
+          <h3 className="font-semibold text-lg">Recommendations</h3>
+          <ul className="space-y-2">
+            {result.questionnaireDetails.recommendations.map((rec, i) => (
+              <li key={i} className="flex items-start gap-3 text-sm">
+                <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-medium">
+                  {i + 1}
+                </span>
+                <span className="text-muted-foreground">{rec}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {/* Disclaimer */}
       <div className="bg-accent/50 rounded-lg p-4 text-sm text-muted-foreground">

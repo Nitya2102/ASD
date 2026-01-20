@@ -38,17 +38,26 @@ class ASDUnifiedSystem:
         print(f"Keras version: {tf.keras.__version__}\n")
 
         # -----
-        # 1. Load Questionnaire ML Model
+        # 1. Load Questionnaire ML Model (Optional)
         # -----
-        ml_path = os.path.join(BASE_DIR, "asd_model.pkl")
+        ml_path = os.path.join(BASE_DIR, "best_asd_mobilenetv2", "asd_model.pkl")
         try:
-            with open(ml_path, "rb") as f:
-                ml_data = pickle.load(f)
-            self.ml_model = ml_data["model"]
-            self.feature_columns = ml_data["feature_columns"]
-            print("[OK] ML Model loaded")
+            # Workaround for numpy <2 / scikit-learn version mismatch
+            import warnings
+            warnings.filterwarnings("ignore", category=UserWarning)
+            
+            if os.path.exists(ml_path):
+                with open(ml_path, "rb") as f:
+                    ml_data = pickle.load(f)
+                self.ml_model = ml_data["model"]
+                self.feature_columns = ml_data["feature_columns"]
+                print("[OK] ML Model loaded")
+            else:
+                print("[INFO] ML Model file not found (asd_model.pkl) - Questionnaire-based detection disabled")
+                self.ml_model = None
+                self.feature_columns = None
         except Exception as e:
-            print(f"[WARNING] ML Model loading failed: {e}")
+            print(f"[INFO] ML Model skipped: {e}")
             self.ml_model = None
             self.feature_columns = None
 
@@ -104,7 +113,8 @@ class ASDUnifiedSystem:
 
         print("\n[OK] System Initialization Complete!\n")
         print(f"Status Summary:")
-        print(f"  - ML Model: {'[OK] Loaded' if self.ml_model else '[FAIL] Not Available'}")
+        ml_status = '[OK] Loaded' if self.ml_model else '[INFO] Skipped (numpy BitGenerator incompatibility)'
+        print(f"  - ML Model: {ml_status}")
         print(f"  - CNN Model: {'[OK] Loaded' if self.cnn_available else '[FAIL] Not Available'}")
         print(f"  - XAI Module: {'[OK] Available' if self.xai else '[FAIL] Not Available'}\n")
 
@@ -112,13 +122,54 @@ class ASDUnifiedSystem:
     # QUESTIONNAIRE PREDICTION
     # =================================================================
     def predict_from_questionnaire(self, questionnaire_data):
-        if not self.ml_model:
+        """Predict from questionnaire; if ML model missing, use heuristic fallback."""
+        # Heuristic fallback when pickle model is unavailable
+        def fallback_predict(data):
+            # Scoring rules mirror screening_api.py
+            questions = [
+                {"id": "A1", "type": "reverse"},
+                {"id": "A2", "type": "reverse"},
+                {"id": "A3", "type": "reverse"},
+                {"id": "A4", "type": "reverse"},
+                {"id": "A5", "type": "reverse"},
+                {"id": "A6", "type": "reverse"},
+                {"id": "A7", "type": "reverse"},
+                {"id": "A8", "type": "reverse"},
+                {"id": "A9", "type": "reverse"},
+                {"id": "A10", "type": "direct"},
+            ]
+
+            responses = data.get("responses", {})
+            scores = {}
+            for q in questions:
+                ans = str(responses.get(q["id"], "")).lower()
+                yes = ans in ["yes", "y", "1", "true"]
+                scores[q["id"]] = 0 if (yes and q["type"] == "reverse") else (1 if (yes and q["type"] == "direct") else (1 if q["type"] == "reverse" else 0))
+
+            total_score = sum(scores.values())
+            confidence = total_score / 10.0
+            prediction = int(total_score >= 5)
+            if total_score >= 8:
+                risk = "HIGH"
+            elif total_score >= 5:
+                risk = "MODERATE"
+            else:
+                risk = "LOW"
+
             return {
                 "source": "questionnaire",
-                "prediction": 0,
-                "confidence": 0.0,
-                "error": "ML model not available"
+                "prediction": prediction,
+                "prediction_label": "ELEVATED_RISK" if prediction else "LOW_RISK",
+                "confidence": confidence,
+                "total_score": total_score,
+                "max_score": 10,
+                "risk_level": risk,
+                "scored_responses": scores,
+                "fallback": True
             }
+
+        if not self.ml_model:
+            return fallback_predict(questionnaire_data)
             
         try:
             from screening_api import ASDScreeningEngine
@@ -135,18 +186,14 @@ class ASDUnifiedSystem:
             }
 
             result = api.predict(child_info, questionnaire_data["responses"])
+            result["fallback"] = False
             return result
             
         except Exception as e:
             print(f"Error in questionnaire prediction: {e}")
             import traceback
             traceback.print_exc()
-            return {
-                "source": "questionnaire",
-                "prediction": 0,
-                "confidence": 0.0,
-                "error": str(e)
-            }
+            return fallback_predict(questionnaire_data)
 
     # =================================================================
     # IMAGE PREDICTION

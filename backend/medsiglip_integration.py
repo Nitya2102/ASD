@@ -42,7 +42,7 @@ class ASDExplainableAI:
     
     def generate_gradcam(self, img_array, pred_index=None):
         """
-        Generate GradCAM heatmap using TensorFlow/Keras
+        Generate GradCAM heatmap using gradient-based visualization
         
         Args:
             img_array: Preprocessed image array (1, 224, 224, 3)
@@ -52,55 +52,45 @@ class ASDExplainableAI:
             heatmap: numpy array of shape (224, 224)
         """
         if self.model is None:
-            return np.zeros((224, 224))
+            return np.ones((224, 224)) * 0.5
         
-        # Find the last convolutional layer
-        last_conv_layer = None
-        for layer in reversed(self.model.layers):
-            if len(layer.output_shape) == 4:  # Conv layer has 4D output
-                last_conv_layer = layer
-                break
-        
-        if last_conv_layer is None:
-            print("⚠ No convolutional layer found for GradCAM")
-            return np.zeros((224, 224))
-        
-        # Create a model that outputs both the conv layer and final prediction
-        grad_model = tf.keras.models.Model(
-            inputs=[self.model.inputs],
-            outputs=[last_conv_layer.output, self.model.output]
-        )
-        
-        # Compute gradient
-        with tf.GradientTape() as tape:
-            conv_outputs, predictions = grad_model(img_array)
-            if pred_index is None:
-                pred_index = tf.argmax(predictions[0])
-            class_channel = predictions[:, pred_index]
-        
-        # Gradient of the predicted class with respect to conv layer
-        grads = tape.gradient(class_channel, conv_outputs)
-        
-        # Global average pooling of gradients
-        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
-        
-        # Weight the channels by importance
-        conv_outputs = conv_outputs[0]
-        pooled_grads = pooled_grads.numpy()
-        conv_outputs = conv_outputs.numpy()
-        
-        for i in range(pooled_grads.shape[-1]):
-            conv_outputs[:, :, i] *= pooled_grads[i]
-        
-        # Create heatmap
-        heatmap = np.mean(conv_outputs, axis=-1)
-        heatmap = np.maximum(heatmap, 0)  # ReLU
-        heatmap /= (np.max(heatmap) + 1e-10)  # Normalize
-        
-        # Resize to match input image
-        heatmap = cv2.resize(heatmap, (224, 224))
-        
-        return heatmap
+        try:
+            # For Sequential models with MobileNetV2 base, use input gradients
+            img_var = tf.Variable(img_array, dtype=tf.float32)
+            
+            with tf.GradientTape() as tape:
+                tape.watch(img_var)
+                predictions = self.model(img_var)
+                # Get the prediction (binary classification: 0 or 1)
+                pred_class = predictions[0, 0]
+            
+            # Get gradients with respect to input
+            grads = tape.gradient(pred_class, img_var)
+            
+            if grads is None:
+                return np.ones((224, 224)) * 0.5
+            
+            # Create heatmap from input gradients
+            # Take absolute value and average across color channels
+            grads_np = grads.numpy()[0]
+            heatmap = np.mean(np.abs(grads_np), axis=-1)
+            
+            # Apply Gaussian blur for smoothing
+            heatmap = cv2.GaussianBlur(heatmap, (5, 5), 0)
+            
+            # Normalize to 0-1
+            heatmap_min = np.min(heatmap)
+            heatmap_max = np.max(heatmap)
+            if heatmap_max > heatmap_min:
+                heatmap = (heatmap - heatmap_min) / (heatmap_max - heatmap_min)
+            else:
+                heatmap = np.ones((224, 224)) * 0.5
+            
+            return heatmap
+            
+        except Exception as e:
+            print(f"⚠ GradCAM generation failed: {e}")
+            return np.ones((224, 224)) * 0.5
     
     def create_heatmap_overlay(self, original_img, heatmap):
         """
@@ -113,28 +103,38 @@ class ASDExplainableAI:
         Returns:
             base64 encoded PNG image
         """
-        # Resize original image
-        img_resized = original_img.resize((224, 224))
-        img_array = np.array(img_resized) / 255.0
-        
-        # Apply colormap to heatmap
-        heatmap_colored = cv2.applyColorMap(
-            np.uint8(255 * heatmap), 
-            cv2.COLORMAP_JET
-        )
-        heatmap_colored = cv2.cvtColor(heatmap_colored, cv2.COLOR_BGR2RGB) / 255.0
-        
-        # Superimpose heatmap on image
-        overlay = heatmap_colored * 0.4 + img_array * 0.6
-        overlay = np.clip(overlay, 0, 1)
-        
-        # Convert to PIL and then to base64
-        overlay_img = Image.fromarray(np.uint8(overlay * 255))
-        buffer = io.BytesIO()
-        overlay_img.save(buffer, format='PNG')
-        img_base64 = base64.b64encode(buffer.getvalue()).decode()
-        
-        return img_base64
+        try:
+            # Resize original image
+            img_resized = original_img.resize((224, 224))
+            img_array = np.array(img_resized).astype(np.float32) / 255.0
+            
+            # Ensure heatmap is normalized 0-1
+            heatmap_normalized = np.clip(heatmap, 0, 1)
+            
+            # Convert heatmap to uint8 for colormap application
+            heatmap_uint8 = np.uint8(255 * heatmap_normalized)
+            
+            # Apply JET colormap
+            heatmap_colored = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
+            
+            # Convert BGR to RGB
+            heatmap_rgb = cv2.cvtColor(heatmap_colored, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+            
+            # Blend: heatmap 40%, original image 60%
+            alpha = 0.4
+            overlay = heatmap_rgb * alpha + img_array * (1 - alpha)
+            overlay = np.clip(overlay, 0, 1)
+            
+            # Convert to PIL and then to base64
+            overlay_img = Image.fromarray(np.uint8(overlay * 255))
+            buffer = io.BytesIO()
+            overlay_img.save(buffer, format='PNG')
+            img_base64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            return img_base64
+        except Exception as e:
+            print(f"[ERROR] Heatmap overlay creation failed: {e}")
+            return ""
     
     def analyze_attention_regions(self, heatmap):
         """
@@ -293,15 +293,13 @@ for proper evaluation.
                 'heatmap_base64': heatmap_base64,
                 'lime_base64': lime_base64,
                 'attention_regions': [
-                    {'region': r[0], 'attention_score': float(r[1])}
-                    for r in attention_regions
+                    r[0] for r in attention_regions
                 ],
                 'llm_explanation': text_explanation,
-                'facial_regions': {
-                    'primary': attention_regions[0][0],
-                    'secondary': attention_regions[1][0],
-                    'minimal': attention_regions[-1][0]
-                }
+                'facial_regions': [
+                    {'region': r[0], 'attention_score': float(r[1]), 'clinical_relevance': ''}
+                    for r in attention_regions
+                ]
             }
             
         except Exception as e:

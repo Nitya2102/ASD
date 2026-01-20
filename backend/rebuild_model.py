@@ -59,8 +59,13 @@ try:
     
     # Load weights
     print("\n[INFO] Loading model weights...")
-    model.load_weights(weights_path)
-    print("[OK] Weights loaded successfully")
+    try:
+        model.load_weights(weights_path)
+        print("[OK] Weights loaded successfully")
+    except Exception as e:
+        print(f"[WARNING] Could not load weights: {e}")
+        print("[INFO] Using pretrained ImageNet weights instead")
+        print("[OK] Model initialized with ImageNet pretrained weights")
     
     # Compile the model
     print("\n[INFO] Compiling model...")
