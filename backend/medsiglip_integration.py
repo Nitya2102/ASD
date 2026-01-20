@@ -1,208 +1,318 @@
-"""ASD Explainable AI Module"""
+"""
+ASD Explainable AI Module - Lightweight Version
+Uses GradCAM and LIME without large model downloads
+"""
 
 import tensorflow as tf
 import numpy as np
 from PIL import Image
-import io
-import base64
-
-class ASDExplainableAI:
-    """Explainable AI for ASD detection using CNN"""
-
-    def __init__(self):
-        print("Initializing XAI module...")
-        # This is a placeholder - in a real implementation, you'd load your models here
-        self.initialized = True
-        print("✓ XAI module ready")
-
-    def analyze_image(self, image_data):
-        """Analyze image and return explanation"""
-        # Placeholder implementation
-        return {
-            'grad_cam': base64.b64encode(b'placeholder').decode(),
-            'lime': base64.b64encode(b'placeholder').decode(),
-            'attention_regions': ['face', 'eyes'],
-            'llm_explanation': 'Image analysis completed with Grad-CAM and LIME explanations.',
-            'facial_regions': {
-                'primary': 'face',
-                'secondary': 'eyes',
-                'minimal': 'nose'
-            }
-        }
-
-import torch
-import torch.nn.functional as F
-import torchvision.transforms as T
 import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-from PIL import Image
-from transformers import (
-    AutoProcessor,
-    AutoModel,
-    AutoTokenizer,
-    AutoModelForCausalLM
-)
-from pytorch_grad_cam import GradCAM
-from pytorch_grad_cam.utils.image import show_cam_on_image
 import io
 import base64
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+# Optional LIME import
+try:
+    from lime import lime_image
+    from skimage.segmentation import mark_boundaries
+    LIME_AVAILABLE = True
+except ImportError:
+    LIME_AVAILABLE = False
+    print("⚠ LIME not installed. Install with: pip install lime scikit-image")
+
 
 class ASDExplainableAI:
-    """Explainable AI module using Grad-CAM + SigLIP + LLM"""
+    """Lightweight Explainable AI using GradCAM and LIME"""
     
-    def __init__(self):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"XAI using device: {self.device}")
-        
-        # Load models
-        self._load_cnn()
-        self._load_siglip()
-        self._load_llm()
-        
-        # Image transform
-        self.transform = T.Compose([
-            T.Resize((224, 224)),
-            T.ToTensor(),
-            T.Normalize(mean=[0.485, 0.456, 0.406],
-                       std=[0.229, 0.224, 0.225])
-        ])
+    def __init__(self, model=None):
+        """
+        Args:
+            model: TensorFlow/Keras model (will be set from unified_asd_api.py)
+        """
+        print("Initializing Lightweight XAI module...")
+        self.model = model
+        self.initialized = True
+        print(f"✓ XAI module ready (LIME available: {LIME_AVAILABLE})")
     
-    def _load_cnn(self):
-        """Load CNN for Grad-CAM"""
-        from torchvision.models import mobilenet_v2
-        
-        self.cnn = mobilenet_v2(pretrained=True)
-        self.cnn.classifier[1] = torch.nn.Linear(self.cnn.last_channel, 2)
-        self.cnn = self.cnn.to(self.device)
-        self.cnn.eval()
-        
-        self.target_layer = self.cnn.features[-1]
-        self.cam = GradCAM(model=self.cnn, target_layers=[self.target_layer])
+    def set_model(self, model):
+        """Set the CNN model to use for explanations"""
+        self.model = model
     
-    def _load_siglip(self):
-        """Load SigLIP for image embeddings"""
-        siglip_model_id = "google/siglip-base-patch16-224"
-        self.siglip_processor = AutoProcessor.from_pretrained(siglip_model_id)
-        self.siglip_model = AutoModel.from_pretrained(siglip_model_id).to(self.device)
-        self.siglip_model.eval()
-    
-    def _load_llm(self):
-        """Load LLM for natural language explanations"""
-        llm_id = "Qwen/Qwen2.5-3B-Instruct"
-        self.tokenizer = AutoTokenizer.from_pretrained(llm_id)
-        self.llm = AutoModelForCausalLM.from_pretrained(
-            llm_id,
-            torch_dtype=torch.float16,
-            device_map="auto"
+    def generate_gradcam(self, img_array, pred_index=None):
+        """
+        Generate GradCAM heatmap using TensorFlow/Keras
+        
+        Args:
+            img_array: Preprocessed image array (1, 224, 224, 3)
+            pred_index: Class index to visualize (None for binary classification)
+        
+        Returns:
+            heatmap: numpy array of shape (224, 224)
+        """
+        if self.model is None:
+            return np.zeros((224, 224))
+        
+        # Find the last convolutional layer
+        last_conv_layer = None
+        for layer in reversed(self.model.layers):
+            if len(layer.output_shape) == 4:  # Conv layer has 4D output
+                last_conv_layer = layer
+                break
+        
+        if last_conv_layer is None:
+            print("⚠ No convolutional layer found for GradCAM")
+            return np.zeros((224, 224))
+        
+        # Create a model that outputs both the conv layer and final prediction
+        grad_model = tf.keras.models.Model(
+            inputs=[self.model.inputs],
+            outputs=[last_conv_layer.output, self.model.output]
         )
-    
-    def generate_gradcam(self, img):
-        """Generate Grad-CAM heatmap"""
-        input_tensor = self.transform(img).unsqueeze(0).to(self.device)
-        grayscale_cam = self.cam(input_tensor=input_tensor)[0]
         
-        img_np = np.array(img.resize((224, 224))) / 255.0
-        cam_overlay = show_cam_on_image(img_np, grayscale_cam, use_rgb=True)
+        # Compute gradient
+        with tf.GradientTape() as tape:
+            conv_outputs, predictions = grad_model(img_array)
+            if pred_index is None:
+                pred_index = tf.argmax(predictions[0])
+            class_channel = predictions[:, pred_index]
         
-        return grayscale_cam, cam_overlay
+        # Gradient of the predicted class with respect to conv layer
+        grads = tape.gradient(class_channel, conv_outputs)
+        
+        # Global average pooling of gradients
+        pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+        
+        # Weight the channels by importance
+        conv_outputs = conv_outputs[0]
+        pooled_grads = pooled_grads.numpy()
+        conv_outputs = conv_outputs.numpy()
+        
+        for i in range(pooled_grads.shape[-1]):
+            conv_outputs[:, :, i] *= pooled_grads[i]
+        
+        # Create heatmap
+        heatmap = np.mean(conv_outputs, axis=-1)
+        heatmap = np.maximum(heatmap, 0)  # ReLU
+        heatmap /= (np.max(heatmap) + 1e-10)  # Normalize
+        
+        # Resize to match input image
+        heatmap = cv2.resize(heatmap, (224, 224))
+        
+        return heatmap
     
-    def analyze_attention_regions(self, cam_map):
-        """Analyze which facial regions receive attention"""
-        h, w = cam_map.shape
+    def create_heatmap_overlay(self, original_img, heatmap):
+        """
+        Create visualization overlay of heatmap on original image
+        
+        Args:
+            original_img: PIL Image
+            heatmap: numpy array (224, 224)
+        
+        Returns:
+            base64 encoded PNG image
+        """
+        # Resize original image
+        img_resized = original_img.resize((224, 224))
+        img_array = np.array(img_resized) / 255.0
+        
+        # Apply colormap to heatmap
+        heatmap_colored = cv2.applyColorMap(
+            np.uint8(255 * heatmap), 
+            cv2.COLORMAP_JET
+        )
+        heatmap_colored = cv2.cvtColor(heatmap_colored, cv2.COLOR_BGR2RGB) / 255.0
+        
+        # Superimpose heatmap on image
+        overlay = heatmap_colored * 0.4 + img_array * 0.6
+        overlay = np.clip(overlay, 0, 1)
+        
+        # Convert to PIL and then to base64
+        overlay_img = Image.fromarray(np.uint8(overlay * 255))
+        buffer = io.BytesIO()
+        overlay_img.save(buffer, format='PNG')
+        img_base64 = base64.b64encode(buffer.getvalue()).decode()
+        
+        return img_base64
+    
+    def analyze_attention_regions(self, heatmap):
+        """
+        Analyze which facial regions receive the most attention
+        
+        Args:
+            heatmap: numpy array (224, 224)
+        
+        Returns:
+            List of (region_name, attention_score) tuples
+        """
+        h, w = heatmap.shape
+        
+        # Define approximate facial regions (assuming centered face)
         regions = {
-            "eyes": cam_map[int(0.25*h):int(0.45*h), int(0.2*w):int(0.8*w)].mean(),
-            "nose": cam_map[int(0.45*h):int(0.6*h), int(0.4*w):int(0.6*w)].mean(),
-            "mouth": cam_map[int(0.6*h):int(0.8*h), int(0.3*w):int(0.7*w)].mean(),
+            "upper_face": heatmap[int(0.2*h):int(0.4*h), int(0.2*w):int(0.8*w)].mean(),
+            "eyes_region": heatmap[int(0.3*h):int(0.45*h), int(0.25*w):int(0.75*w)].mean(),
+            "mid_face": heatmap[int(0.4*h):int(0.6*h), int(0.3*w):int(0.7*w)].mean(),
+            "lower_face": heatmap[int(0.6*h):int(0.8*h), int(0.25*w):int(0.75*w)].mean(),
+            "overall": heatmap.mean()
         }
         
+        # Sort by attention score
         sorted_regions = sorted(regions.items(), key=lambda x: x[1], reverse=True)
+        
         return sorted_regions
     
-    def generate_llm_explanation(self, attention_regions):
-        """Generate natural language explanation using LLM"""
-        primary = attention_regions[0][0]
-        secondary = attention_regions[1][0]
-        low = attention_regions[-1][0]
+    def generate_lime_explanation(self, img, num_samples=100):
+        """
+        Generate LIME explanation (optional - only if LIME is installed)
         
-        prompt = f"""You are a medical AI assistant.
-
-Task:
-Provide a NON-DIAGNOSTIC autism screening explanation based ONLY on:
-- CNN attention regions (Grad-CAM)
-- general medical literature
-
-Observed CNN attention summary:
-- Primary focus: {primary}
-- Secondary focus: {secondary}
-- Minimal attention: {low}
-
-Rules:
-- Do NOT claim diagnosis
-- Use cautious language ("may be associated", "has been reported")
-- Emphasize limitations
-- Keep response under 150 words
-
-Explain:
-1. Which facial regions were emphasized
-2. Why such regions are discussed in autism research (if applicable)
-3. Why facial features alone are insufficient
-
-Response format:
-- Observed Regions
-- Literature Context
-- Limitations
-"""
+        Args:
+            img: PIL Image
+            num_samples: Number of samples for LIME
         
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.llm.device)
+        Returns:
+            base64 encoded image or empty string
+        """
+        if not LIME_AVAILABLE or self.model is None:
+            return ""
         
-        with torch.no_grad():
-            output = self.llm.generate(
-                **inputs,
-                max_new_tokens=250,
-                do_sample=False
+        try:
+            # Prepare image
+            img_resized = img.resize((224, 224))
+            img_array = np.array(img_resized) / 255.0
+            
+            # Create LIME explainer
+            explainer = lime_image.LimeImageExplainer()
+            
+            # Prediction function for LIME
+            def predict_fn(images):
+                preprocessed = images  # Already normalized
+                preds = self.model.predict(preprocessed, verbose=0)
+                # Return probabilities for both classes
+                return np.hstack([1 - preds, preds])
+            
+            # Generate explanation
+            explanation = explainer.explain_instance(
+                img_array,
+                predict_fn,
+                top_labels=1,
+                hide_color=0,
+                num_samples=num_samples
             )
+            
+            # Get image with boundaries
+            temp, mask = explanation.get_image_and_mask(
+                explanation.top_labels[0],
+                positive_only=True,
+                num_features=5,
+                hide_rest=False
+            )
+            
+            # Create visualization
+            img_boundry = mark_boundaries(temp, mask)
+            
+            # Convert to base64
+            lime_img = Image.fromarray(np.uint8(img_boundry * 255))
+            buffer = io.BytesIO()
+            lime_img.save(buffer, format='PNG')
+            lime_base64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            return lime_base64
+            
+        except Exception as e:
+            print(f"LIME explanation failed: {e}")
+            return ""
+    
+    def generate_simple_explanation(self, attention_regions):
+        """
+        Generate simple text explanation based on attention regions
         
-        result = self.tokenizer.decode(output[0], skip_special_tokens=True)
+        Args:
+            attention_regions: List of (region, score) tuples
         
-        # Extract only the response part (after the prompt)
-        explanation = result.split("Response format:")[-1].strip()
+        Returns:
+            String explanation
+        """
+        primary = attention_regions[0]
+        secondary = attention_regions[1]
+        
+        explanation = f"""
+**Model Attention Analysis:**
+
+The neural network focused primarily on the **{primary[0]}** (attention: {primary[1]:.2%}), 
+followed by the **{secondary[0]}** (attention: {secondary[1]:.2%}).
+
+**Important Note:**
+This is a screening tool, not a diagnostic instrument. The model analyzes facial patterns 
+that have been studied in autism research literature. However:
+
+- Facial features alone are insufficient for diagnosis
+- Many factors influence facial expressions and features
+- Professional clinical evaluation is always required
+- This tool should only be used as part of comprehensive screening
+
+**Recommendation:**
+If screening indicates elevated risk, please consult with a qualified healthcare professional 
+for proper evaluation.
+        """.strip()
         
         return explanation
     
     def generate_explanation(self, img):
         """
-        Complete XAI pipeline
+        Complete XAI pipeline - Main method called by unified_asd_api.py
         
-        Input: PIL Image
-        Output: Dict with heatmap, regions, and explanation
+        Args:
+            img: PIL Image
+        
+        Returns:
+            Dictionary with all explanations
         """
-        # Generate Grad-CAM
-        grayscale_cam, cam_overlay = self.generate_gradcam(img)
-        
-        # Analyze attention regions
-        attention_regions = self.analyze_attention_regions(grayscale_cam)
-        
-        # Generate LLM explanation
-        llm_explanation = self.generate_llm_explanation(attention_regions)
-        
-        # Convert heatmap to base64 for frontend
-        overlay_pil = Image.fromarray(cam_overlay)
-        buffer = io.BytesIO()
-        overlay_pil.save(buffer, format='PNG')
-        heatmap_base64 = base64.b64encode(buffer.getvalue()).decode()
-        
-        return {
-            'heatmap_base64': heatmap_base64,
-            'attention_regions': [
-                {'region': r[0], 'attention_score': float(r[1])}
-                for r in attention_regions
-            ],
-            'llm_explanation': llm_explanation,
-            'facial_regions': {
-                'primary': attention_regions[0][0],
-                'secondary': attention_regions[1][0],
-                'minimal': attention_regions[-1][0]
+        try:
+            # Preprocess image
+            img_resized = img.resize((224, 224))
+            img_array = np.array(img_resized) / 255.0
+            img_batch = np.expand_dims(img_array, axis=0)
+            
+            # Generate GradCAM heatmap
+            heatmap = self.generate_gradcam(img_batch)
+            
+            # Create heatmap overlay
+            heatmap_base64 = self.create_heatmap_overlay(img, heatmap)
+            
+            # Analyze attention regions
+            attention_regions = self.analyze_attention_regions(heatmap)
+            
+            # Generate LIME (if available)
+            lime_base64 = self.generate_lime_explanation(img)
+            
+            # Generate text explanation
+            text_explanation = self.generate_simple_explanation(attention_regions)
+            
+            return {
+                'heatmap_base64': heatmap_base64,
+                'lime_base64': lime_base64,
+                'attention_regions': [
+                    {'region': r[0], 'attention_score': float(r[1])}
+                    for r in attention_regions
+                ],
+                'llm_explanation': text_explanation,
+                'facial_regions': {
+                    'primary': attention_regions[0][0],
+                    'secondary': attention_regions[1][0],
+                    'minimal': attention_regions[-1][0]
+                }
             }
-        }
-
+            
+        except Exception as e:
+            print(f"Error in XAI pipeline: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            return {
+                'heatmap_base64': '',
+                'lime_base64': '',
+                'attention_regions': [],
+                'llm_explanation': f'Error generating explanation: {str(e)}',
+                'facial_regions': {}
+            }

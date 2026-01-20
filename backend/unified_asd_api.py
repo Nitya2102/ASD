@@ -104,15 +104,17 @@ class ASDUnifiedSystem:
         # 3. Initialize XAI (optional)
         # -------------------------------------------------------------
         self.xai = None
-        if XAI_AVAILABLE:
+        if XAI_AVAILABLE and self.cnn_available:
             try:
-                print("Initializing XAI Module (this may download large models)...")
-                self.xai = ASDExplainableAI()
+                print("Initializing XAI Module...")
+                self.xai = ASDExplainableAI(model=self.cnn_model)
                 print("✓ XAI Module initialized")
             except Exception as e:
                 print("⚠ XAI failed to initialize:", e)
                 import traceback
                 traceback.print_exc()
+        elif XAI_AVAILABLE and not self.cnn_available:
+            print("⚠ XAI skipped: CNN model not available")
 
         print("\n🎯 System Initialization Complete!\n")
         print(f"Status Summary:")
