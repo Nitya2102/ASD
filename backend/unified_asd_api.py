@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import numpy as np
 import pickle
+import sys
 import tensorflow as tf
 from PIL import Image
 import os
@@ -14,7 +15,7 @@ try:
     XAI_AVAILABLE = True
 except Exception as e:
     XAI_AVAILABLE = False
-    print("⚠ XAI module not available:", e)
+    print("[WARNING] XAI module not available:", e)
 
 # =====================================================================
 # FLASK APP
@@ -36,91 +37,76 @@ class ASDUnifiedSystem:
         print(f"TensorFlow version: {tf.__version__}")
         print(f"Keras version: {tf.keras.__version__}\n")
 
-        # -------------------------------------------------------------
+        # -----
         # 1. Load Questionnaire ML Model
-        # -------------------------------------------------------------
+        # -----
         ml_path = os.path.join(BASE_DIR, "asd_model.pkl")
         try:
             with open(ml_path, "rb") as f:
                 ml_data = pickle.load(f)
             self.ml_model = ml_data["model"]
             self.feature_columns = ml_data["feature_columns"]
-            print("✓ ML Model loaded")
+            print("[OK] ML Model loaded")
         except Exception as e:
-            print(f"⚠ ML Model loading failed: {e}")
+            print(f"[WARNING] ML Model loading failed: {e}")
             self.ml_model = None
             self.feature_columns = None
 
-        # -------------------------------------------------------------
-        # 2. Load CNN Model (Fixed for Keras 3.0)
-        # -------------------------------------------------------------
-        cnn_model_dir = os.path.join(BASE_DIR, "best_asd_mobilenetv2")
-        print("Loading CNN model from:", cnn_model_dir)
+        # -----
+        # 2. Load CNN Model (Keras format)
+        # -----
+        cnn_model_path = os.path.join(BASE_DIR, "best_asd_mobilenetv2", "asd_model.keras")
+        print(f"Loading CNN model from: {cnn_model_path}")
 
         try:
-            # Verify the directory exists
-            if os.path.isdir(cnn_model_dir):
-                # List all files in the directory for debugging
-                print(f"Files in model directory: {os.listdir(cnn_model_dir)}")
+            if os.path.exists(cnn_model_path):
+                print("[INFO] Loading Keras model...")
+                self.cnn_model = tf.keras.models.load_model(cnn_model_path)
                 
-                # Load without compiling to avoid BatchNormalization issues
-                print("Attempting to load model with compile=False...")
-                self.cnn_model = tf.keras.models.load_model(
-                    cnn_model_dir,
-                    compile=False,  # Skip compilation to avoid layer issues
-                    safe_mode=False  # Disable safe mode for compatibility
-                )
-                
-                # Manually compile the model
-                print("Manually compiling model...")
-                self.cnn_model.compile(
-                    optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
-                    loss='binary_crossentropy',
-                    metrics=['accuracy']
-                )
-                
-                print("✓ CNN Model loaded successfully")
+                print("[OK] CNN Model loaded successfully")
                 print(f"  Model input shape: {self.cnn_model.input_shape}")
                 print(f"  Model output shape: {self.cnn_model.output_shape}")
                 self.cnn_available = True
                 
             else:
-                print(f"⚠ CNN Model directory not found at: {cnn_model_dir}")
+                print(f"[ERROR] Model file not found at: {cnn_model_path}")
+                print(f"[INFO] Please run: python rebuild_model.py")
+                print(f"[INFO] This will create the asd_model.keras file from config.json + model.weights.h5")
                 self.cnn_model = None
                 self.cnn_available = False
                 
         except Exception as e:
-            print(f"⚠ CNN Model loading failed: {e}")
-            print("\n📋 Troubleshooting steps:")
-            print("  1. The model may have been saved with an incompatible Keras version")
-            print("  2. Try re-saving the model with the current Keras version")
-            print("  3. Check if the model directory contains all required files")
+            print(f"[ERROR] CNN Model loading failed: {e}")
+            print("[INFO] Troubleshooting:")
+            print("  1. Check if best_asd_mobilenetv2/asd_model.keras exists")
+            print("  2. Run: python rebuild_model.py")
+            print("  3. Check TensorFlow and Keras versions")
             import traceback
             traceback.print_exc()
             self.cnn_model = None
             self.cnn_available = False
 
-        # -------------------------------------------------------------
+        # -----
         # 3. Initialize XAI (optional)
-        # -------------------------------------------------------------
+        # -----
         self.xai = None
         if XAI_AVAILABLE and self.cnn_available:
             try:
                 print("Initializing XAI Module...")
                 self.xai = ASDExplainableAI(model=self.cnn_model)
-                print("✓ XAI Module initialized")
+                print("[OK] XAI Module initialized")
             except Exception as e:
-                print("⚠ XAI failed to initialize:", e)
+                print("[WARNING] XAI failed to initialize:", e)
                 import traceback
                 traceback.print_exc()
         elif XAI_AVAILABLE and not self.cnn_available:
-            print("⚠ XAI skipped: CNN model not available")
+            print("[WARNING] XAI skipped: CNN model not available")
 
-        print("\n🎯 System Initialization Complete!\n")
+        print("\n[OK] System Initialization Complete!\n")
         print(f"Status Summary:")
-        print(f"  - ML Model: {'✓ Loaded' if self.ml_model else '✗ Not Available'}")
-        print(f"  - CNN Model: {'✓ Loaded' if self.cnn_available else '✗ Not Available'}")
-        print(f"  - XAI Module: {'✓ Available' if self.xai else '✗ Not Available'}\n")
+        print(f"  - ML Model: {'[OK] Loaded' if self.ml_model else '[FAIL] Not Available'}")
+        print(f"  - CNN Model: {'[OK] Loaded' if self.cnn_available else '[FAIL] Not Available'}")
+        print(f"  - XAI Module: {'[OK] Available' if self.xai else '[FAIL] Not Available'}\n")
 
     # =================================================================
     # QUESTIONNAIRE PREDICTION
@@ -359,6 +345,6 @@ def predict_combined():
 # RUN
 # =====================================================================
 if __name__ == "__main__":
-    print("\n🚀 Starting Flask server on http://localhost:5000")
+    print("\n[INFO] Starting Flask server on http://localhost:5000")
     print("Press CTRL+C to quit\n")
     app.run(debug=True, port=5000, host='0.0.0.0')

@@ -46,7 +46,7 @@ export interface ImageResult {
   limeBase64?: string;
   attentionRegions: string[];
   llmExplanation: string;
-  facialRegions: FacialRegion[];
+  facialRegions: FacialRegion[] | Record<string, any>;
 }
 
 export interface CombinedResult {
@@ -57,7 +57,7 @@ export interface CombinedResult {
   mlContribution: number;
   cnnContribution: number;
   questionnaireDetails: QuestionnaireResult;
-  imageDetails: ImageResult;
+  imageDetails: ImageResult | null;
 }
 
 export interface ScreeningState {

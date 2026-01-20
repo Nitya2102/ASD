@@ -91,15 +91,19 @@ export function useScreening() {
 
       const data = await response.json();
 
+      console.log('[Frontend] Questionnaire API Response:', data);
+
       const result: QuestionnaireResult = {
         source: 'questionnaire',
         prediction: data.prediction,
         confidence: data.confidence,
-        riskLevel: data.risk_level,
-        totalScore: data.total_score,
-        concerns: data.concerns ?? [],
-        recommendations: data.recommendations ?? [],
+        riskLevel: (data.risk_level || 'LOW') as any,
+        totalScore: data.total_score || 0,
+        concerns: [], // Backend doesn't provide, generate frontend version if needed
+        recommendations: [], // Backend doesn't provide, generate frontend version if needed
       };
+
+      console.log('[Frontend] Parsed QuestionnaireResult:', result);
 
       setState(prev => ({
         ...prev,
@@ -139,16 +143,25 @@ export function useScreening() {
 
       const data = await response.json();
 
+      console.log('[Frontend] Image API Response:', data);
+
+      // Check for errors from backend
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
       const result: ImageResult = {
         source: 'image',
         prediction: data.prediction,
         confidence: data.confidence,
         heatmapBase64: data.heatmap_base64 || '',
-        limeBase64: '',
+        limeBase64: data.lime_base64 || '',
         attentionRegions: data.attention_regions || [],
-        llmExplanation: data.llm_explanation || '',
-        facialRegions: data.facial_regions || {},
+        llmExplanation: data.llm_explanation || 'No explanation available',
+        facialRegions: Array.isArray(data.facial_regions) ? data.facial_regions : (data.facial_regions || {}),
       };
+
+      console.log('[Frontend] Parsed ImageResult:', result);
 
       const q = state.questionnaireResult!;
       const mlWeight = 0.4;
@@ -174,6 +187,16 @@ export function useScreening() {
         imageDetails: result,
       };
 
+      console.log('[Frontend] Combined Result:', {
+        mlConfidence: q.confidence,
+        cnnConfidence: result.confidence,
+        combinedConfidence,
+        mlContribution: q.confidence * mlWeight,
+        cnnContribution: result.confidence * cnnWeight,
+        riskLevel: combined.riskLevel,
+      });
+      console.log('[Frontend] Final Combined Result:', combined);
+
       setState(prev => ({
         ...prev,
         imageResult: result,
@@ -182,9 +205,10 @@ export function useScreening() {
         isLoading: false,
       }));
     } catch (error) {
+      console.error('[Frontend] Image submission error:', error);
       setState(prev => ({
         ...prev,
-        error: 'Failed to analyze image. Please try again.',
+        error: `Failed to analyze image: ${error instanceof Error ? error.message : 'Unknown error'}`,
         isLoading: false,
       }));
     }
@@ -206,7 +230,7 @@ export function useScreening() {
       mlContribution: q.confidence,
       cnnContribution: 0,
       questionnaireDetails: q,
-      imageDetails: null as any,
+      imageDetails: null,
     };
 
     setState(prev => ({

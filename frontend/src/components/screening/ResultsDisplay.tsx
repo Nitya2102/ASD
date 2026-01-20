@@ -202,19 +202,23 @@ export function ResultsDisplay({ result, imagePreview, onReset }: ResultsDisplay
           <div className="space-y-3">
             <p className="text-sm font-medium">Regional Attention Scores</p>
             <div className="grid sm:grid-cols-2 gap-3">
-              {result.imageDetails.facialRegions.map((region, i) => (
-                <div key={i} className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
-                  <div>
-                    <p className="font-medium text-sm">{region.region}</p>
-                    <p className="text-xs text-muted-foreground">{region.clinical_relevance}</p>
+              {Array.isArray(result.imageDetails.facialRegions) && result.imageDetails.facialRegions.length > 0 ? (
+                result.imageDetails.facialRegions.map((region, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg">
+                    <div>
+                      <p className="font-medium text-sm">{region.region}</p>
+                      <p className="text-xs text-muted-foreground">{region.clinical_relevance}</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-lg font-semibold text-primary">
+                        {Math.round(region.attention_score * 100)}%
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-lg font-semibold text-primary">
-                      {Math.round(region.attention_score * 100)}%
-                    </span>
-                  </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground col-span-2">No facial region data available</p>
+              )}
             </div>
           </div>
         </div>

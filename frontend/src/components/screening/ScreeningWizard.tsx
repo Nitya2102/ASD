@@ -4,6 +4,7 @@ import { PatientInfoForm } from './PatientInfoForm';
 import { QuestionnaireForm } from './QuestionnaireForm';
 import { ImageCapture } from './ImageCapture';
 import { ResultsDisplay } from './ResultsDisplay';
+import { useEffect } from 'react';
 
 const STEPS = [
   { id: 'patient-info', label: 'Patient Info' },
@@ -26,6 +27,22 @@ export function ScreeningWizard() {
   } = useScreening();
 
   const completedSteps = STEPS.slice(0, STEPS.findIndex(s => s.id === state.step)).map(s => s.id);
+
+  // Debug logging
+  useEffect(() => {
+    console.log('[ScreeningWizard] State:', {
+      step: state.step,
+      hasPatientInfo: !!state.patientInfo,
+      hasResponses: Object.values(state.responses).some(v => v !== null),
+      hasImageFile: !!state.imageFile,
+      hasImagePreview: !!state.imagePreview,
+      hasQuestionnaireResult: !!state.questionnaireResult,
+      hasImageResult: !!state.imageResult,
+      hasCombinedResult: !!state.combinedResult,
+      isLoading: state.isLoading,
+      error: state.error,
+    });
+  }, [state]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -84,6 +101,19 @@ export function ScreeningWizard() {
               imagePreview={state.imagePreview}
               onReset={reset}
             />
+          )}
+
+          {state.step === 'results' && !state.combinedResult && (
+            <div className="p-6 bg-destructive/10 rounded-lg text-center">
+              <p className="text-destructive font-semibold">Error: No results available</p>
+              <p className="text-sm text-muted-foreground mt-2">Please go back and try again</p>
+              <button 
+                onClick={() => goToStep('questionnaire')}
+                className="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90"
+              >
+                Go Back
+              </button>
+            </div>
           )}
         </div>
 
