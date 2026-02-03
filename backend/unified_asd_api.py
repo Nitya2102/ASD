@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect
 from flask_cors import CORS
 import numpy as np
 import pickle
@@ -6,6 +6,16 @@ import sys
 import tensorflow as tf
 from PIL import Image
 import os
+
+# =====================================================================
+# OPTIONAL FACE DETECTION IMPORT
+# =====================================================================
+try:
+    import cv2
+    FACE_DETECTION_AVAILABLE = True
+except Exception as e:
+    FACE_DETECTION_AVAILABLE = False
+    print("[WARNING] Face detection not available:", e)
 
 # =====================================================================
 # OPTIONAL XAI IMPORT
@@ -96,7 +106,24 @@ class ASDUnifiedSystem:
             self.cnn_available = False
 
         # -----
-        # 3. Initialize XAI (optional)
+        # 3. Initialize Face Detection (optional)
+        # -----
+        self.face_detector = None
+        self.face_detection_available = False
+        if FACE_DETECTION_AVAILABLE:
+            try:
+                cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+                detector = cv2.CascadeClassifier(cascade_path)
+                if detector.empty():
+                    raise ValueError("Haar cascade could not be loaded")
+                self.face_detector = detector
+                self.face_detection_available = True
+                print("[OK] Face detection initialized")
+            except Exception as e:
+                print("[WARNING] Face detection unavailable:", e)
+
+        # -----
+        # 4. Initialize XAI (optional)
         # -----
         self.xai = None
         if XAI_AVAILABLE and self.cnn_available:
@@ -198,6 +225,73 @@ class ASDUnifiedSystem:
     # =================================================================
     # IMAGE PREDICTION
     # =================================================================
+    def _check_face(self, img: Image.Image):
+        if not self.face_detection_available:
+            return {
+                "has_face": True,
+                "face_count": 0,
+                "is_dummy": False,
+                "reason": "face_detection_unavailable",
+                "message": "Face detection unavailable; skipping check."
+            }
+
+        img_rgb = np.array(img)
+        gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+        print(f"[DEBUG] Image size for face detection: {gray.shape}")
+        
+        # Try multiple detection approaches with more lenient parameters
+        faces = self.face_detector.detectMultiScale(
+            gray,
+            scaleFactor=1.05,  # More sensitive
+            minNeighbors=3,    # Less strict
+            minSize=(30, 30),  # Smaller minimum size
+            flags=cv2.CASCADE_SCALE_IMAGE
+        )
+        
+        # If no faces found with strict parameters, try even more lenient
+        if len(faces) == 0:
+            faces = self.face_detector.detectMultiScale(
+                gray,
+                scaleFactor=1.1,
+                minNeighbors=2,
+                minSize=(20, 20),
+                flags=cv2.CASCADE_SCALE_IMAGE
+            )
+        
+        face_count = len(faces)
+        print(f"[DEBUG] Detected {face_count} faces: {faces.tolist() if len(faces) > 0 else 'None'}")
+
+        face_count = len(faces)
+        print(f"[DEBUG] Detected {face_count} faces: {faces.tolist() if len(faces) > 0 else 'None'}")
+
+        if face_count == 0:
+            return {
+                "has_face": False,
+                "face_count": 0,
+                "is_dummy": True,
+                "reason": "no_face",
+                "message": "No face detected. Please upload a clear frontal face image."
+            }
+
+        if face_count > 1:
+            # Allow multiple faces but warn about it
+            print(f"[DEBUG] Multiple faces detected ({face_count}), proceeding with analysis")
+            return {
+                "has_face": True,
+                "face_count": face_count,
+                "is_dummy": False,  # Don't block multiple faces for now
+                "reason": "multiple_faces_allowed",
+                "message": f"Multiple faces detected ({face_count}), using largest detected face."
+            }
+
+        return {
+            "has_face": True,
+            "face_count": face_count,
+            "is_dummy": False,
+            "reason": "single_face",
+            "message": "Face detected"
+        }
+
     def predict_from_image(self, image_file):
         if not self.cnn_available:
             return {
@@ -205,6 +299,13 @@ class ASDUnifiedSystem:
                 "prediction": 0,
                 "confidence": 0.0,
                 "error": "CNN model not available",
+                "face_check": {
+                    "has_face": False,
+                    "face_count": 0,
+                    "is_dummy": False,
+                    "reason": "cnn_unavailable",
+                    "message": "CNN model not available"
+                },
                 "heatmap_base64": "",
                 "attention_regions": [],
                 "llm_explanation": "CNN model could not be loaded",
@@ -214,6 +315,22 @@ class ASDUnifiedSystem:
         try:
             # Load and preprocess image
             img = Image.open(image_file).convert("RGB")
+
+            # Face check (reject non-face or dummy images)
+            face_check = self._check_face(img)
+            if face_check.get("is_dummy"):
+                return {
+                    "source": "image",
+                    "prediction": 0,
+                    "confidence": 0.0,
+                    "error": face_check.get("message", "No valid face detected"),
+                    "face_check": face_check,
+                    "heatmap_base64": "",
+                    "attention_regions": [],
+                    "llm_explanation": face_check.get("message", "No valid face detected"),
+                    "facial_regions": {}
+                }
+
             img_resized = img.resize((224, 224))
             img_array = np.array(img_resized) / 255.0
             img_batch = np.expand_dims(img_array, axis=0)
@@ -239,6 +356,7 @@ class ASDUnifiedSystem:
                 "source": "image",
                 "prediction": int(cnn_pred > 0.5),
                 "confidence": cnn_pred,
+                "face_check": face_check,
                 **xai_results
             }
             
@@ -251,6 +369,13 @@ class ASDUnifiedSystem:
                 "prediction": 0,
                 "confidence": 0.0,
                 "error": str(e),
+                "face_check": {
+                    "has_face": False,
+                    "face_count": 0,
+                    "is_dummy": False,
+                    "reason": "prediction_error",
+                    "message": str(e)
+                },
                 "heatmap_base64": "",
                 "attention_regions": [],
                 "llm_explanation": f"Error during prediction: {str(e)}",
@@ -387,6 +512,29 @@ def predict_combined():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+# =====================================================================
+# ROOT INDEX
+# =====================================================================
+@app.route("/", methods=["GET"])
+def index():
+    """Redirect root to the health endpoint."""
+    return redirect("/api/health")
+
+# =====================================================================
+# DEBUG: ROUTES INSPECTION
+# =====================================================================
+@app.route("/api/debug/routes", methods=["GET"])
+def debug_routes():
+    """Return a JSON list of registered routes and their methods for debugging."""
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            "rule": str(rule),
+            "methods": sorted([m for m in rule.methods if m not in ("HEAD", "OPTIONS")]),
+            "endpoint": rule.endpoint
+        })
+    return jsonify({"routes": routes})
 
 # =====================================================================
 # RUN

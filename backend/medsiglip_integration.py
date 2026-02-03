@@ -289,6 +289,14 @@ for proper evaluation.
             # Generate text explanation
             text_explanation = self.generate_simple_explanation(attention_regions)
             
+            region_relevance = {
+                "upper_face": "May reflect forehead/eyebrow movement associated with gaze/affect.",
+                "eyes_region": "May indicate eye contact or gaze patterns; interpret cautiously.",
+                "mid_face": "Mid-face regions (nose/cheeks) have limited direct clinical specificity.",
+                "lower_face": "Lower-face features (mouth/jaw) may relate to expression or speech-related patterns.",
+                "overall": "Overall attention distribution across the face; consider with other evidence."
+            }
+
             return {
                 'heatmap_base64': heatmap_base64,
                 'lime_base64': lime_base64,
@@ -297,7 +305,11 @@ for proper evaluation.
                 ],
                 'llm_explanation': text_explanation,
                 'facial_regions': [
-                    {'region': r[0], 'attention_score': float(r[1]), 'clinical_relevance': ''}
+                    {
+                        'region': r[0],
+                        'attention_score': float(r[1]),
+                        'clinical_relevance': region_relevance.get(r[0], '')
+                    }
                     for r in attention_regions
                 ]
             }

@@ -38,6 +38,14 @@ export interface FacialRegion {
   clinical_relevance: string;
 }
 
+export interface FaceCheck {
+  hasFace: boolean;
+  faceCount: number;
+  isDummy: boolean;
+  reason: string;
+  message: string;
+}
+
 export interface ImageResult {
   source: 'image';
   prediction: number;
@@ -47,6 +55,7 @@ export interface ImageResult {
   attentionRegions: string[];
   llmExplanation: string;
   facialRegions: FacialRegion[] | Record<string, any>;
+  faceCheck?: FaceCheck;
 }
 
 export interface CombinedResult {
@@ -75,7 +84,7 @@ export interface ScreeningState {
 
 export const QUESTIONNAIRE_QUESTIONS = [
   { id: 'A1', text: 'Does your child look at you when you call his/her name?' },
-  { id: 'A2', text: 'How easy is it for you to get eye contact with your child?' },
+  { id: 'A2', text: 'Is it easy for you to get eye contact with your child?' },
   { id: 'A3', text: 'Does your child point to indicate that s/he wants something?' },
   { id: 'A4', text: 'Does your child point to share interest with you?' },
   { id: 'A5', text: 'Does your child pretend (e.g., care for dolls, talk on toy phone)?' },

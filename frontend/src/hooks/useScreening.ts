@@ -159,6 +159,13 @@ export function useScreening() {
         attentionRegions: data.attention_regions || [],
         llmExplanation: data.llm_explanation || 'No explanation available',
         facialRegions: Array.isArray(data.facial_regions) ? data.facial_regions : (data.facial_regions || {}),
+        faceCheck: data.face_check ? {
+          hasFace: !!data.face_check.has_face,
+          faceCount: data.face_check.face_count ?? 0,
+          isDummy: !!data.face_check.is_dummy,
+          reason: data.face_check.reason || 'unknown',
+          message: data.face_check.message || '',
+        } : undefined,
       };
 
       console.log('[Frontend] Parsed ImageResult:', result);

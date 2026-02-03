@@ -123,6 +123,20 @@ export function ResultsDisplay({ result, imagePreview, onReset }: ResultsDisplay
                 </div>
               </div>
 
+              {result.imageDetails.faceCheck && (
+                <div className="rounded-lg border border-border bg-accent/40 p-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Face Check</span>
+                    <span className={cn('font-medium', result.imageDetails.faceCheck.isDummy ? 'text-destructive' : 'text-emerald-600')}>
+                      {result.imageDetails.faceCheck.isDummy ? 'Invalid (Dummy/No Face)' : 'Valid Face'}
+                    </span>
+                  </div>
+                  <p className="text-muted-foreground mt-1">
+                    {result.imageDetails.faceCheck.message}
+                  </p>
+                </div>
+              )}
+
               {/* Attention regions */}
               <div className="space-y-2">
                 <p className="text-sm font-medium">Attention Regions</p>
